@@ -1,0 +1,213 @@
+"""Copyright [2014] [Richard Impey]
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License."""
+
+#open functions
+import collections
+import sys
+
+# makes a dictionary and remembering the order of the insets
+DIRS = collections.OrderedDict((
+    ('U', (-1, 0)),
+    ('L', (0, -1)),
+    ('D', (1, 0)),
+    ('R', (0, 1)),
+))
+# every element defined
+DOT    = '.'
+GHOST  = 'G'
+PACMAN = 'P'
+SPACE  = ' '
+WALL   = '#'
+
+OUTPUT = 'O'
+
+ALIVE, DEAD, WON = range(3)
+
+#game program start here
+class Game:
+  __slots__ = (
+      'dots', 'ghosts', 'old_pacman', 'pacman', 'walls',
+      'width', 'height',
+      'points', 'state',
+  )#everything put into slot
+  # file opened
+  def __init__(self, filename = 'maze_Sml.txt'):
+    self.load(filename)
+  # file looked at 
+  def load(self, filename):
+    """
+    Loads the initial board from the file `filename`.
+    """
+    self.dots = set()    # {(row, col)}
+    self.ghosts = set()  # {(row, col)}
+    self.pacman = None   # (row, col)
+    self.walls = set()   # {(row, col)}
+    self.height = self.width = 0 # height and width = 0
+    self.points = 0 # make points = 0
+    with open(filename) as f: # file opened
+      for r, line in enumerate(f):# every line is enumerated eg 0 #######
+        row = line.strip() # spaces striped
+        for c, cell in enumerate(row): # every little piece enumerated eg 0 #
+          pos = (r, c) # define pos (row, col)
+          if cell == DOT: # if cell = "."
+            self.dots.add(pos) # position of that dot is stored in pos eg (1, 2)
+          elif cell == GHOST: # if cell = "G"
+            self.ghosts.add(pos) # position of that ghost is stored in pos eg (2, 5)
+          elif cell == PACMAN: # if cell = "P"
+            self.pacman = pos # position of that pacman is stored in pos eg (2, 5)
+          elif cell == WALL: # if cell = "#"
+            self.walls.add(pos) # position of that wall is stored in pos eg (2, 5)
+        self.width = c + 1 # colum position + 1
+      self.height = r + 1 # row position + 1
+    self.state = WON if not self.dots else ALIVE # if state = won if not position = dot else still alive
+
+  # defined ghosts state  
+  def has_won(self):
+    return self.state == WON # state = won
+
+  def is_alive(self):
+    return self.state == ALIVE # state = alive
+
+  def is_dead(self):
+    return self.state == DEAD # state = live
+
+  # define ghosts path
+  def ghost_path(self, ghost):
+    """
+    Returns the path that the provided ghost should take to
+    reach where Pac Man last was.
+    """
+    todo = collections.deque(([ghost],))# list of all possible paths, deque speeeds up prosess of appending and popping
+    while todo: # while todo list is not empty
+      path = todo.popleft() # Remove and return an position from the left side of the deque(ghosts current position) eg [(4, 3), (4, 4), (5, 4)]
+      r, c = path[-1] # changes r to row postion in last position in path and c to colum positin eg r = 5 and c = 4
+      if path[-1] == self.old_pacman: # if new position (path[-1]) = pacmans orginal position (before move) 
+        return path # return whole path and end loop
+      seen = set(path) # all position in path put into dictionary and in to variable seen
+      for dr, dc in DIRS.values(): # dr and dc  in values of DIRS
+        pos = (r + dr, c + dc) # r + dr and c + dc, eg -1 + 3 and 0 + 4
+        if not (pos in seen or pos in self.walls): # if pos not in seen or does not = a wall
+          new_path = path + [pos] # path + position
+          todo.append(new_path) # append the new path into todo and repeat
+
+  # function to move ghost
+
+  def move_ghosts(self): 
+    """
+    Moves all of the ghosts closer towarads where Pac Man was.
+    Updates the game state if a collision with where Pac Man
+    now is occurs.
+    """
+    new_ghosts = set() # make list for ghosts new position
+    for ghost in self.ghosts: # for ghost in ghosts list of ghost eg (4, 1) in [(4, 1), (3, 5)]
+      pos = self.ghost_path(ghost)[1] # get new position of ghost
+      new_ghosts.add(pos) # put ghosts new position into the list new_ghost
+      if pos == self.pacman and self.state == ALIVE: # if ghosts new position = pacmans position and state is still alive 
+        self.state = DEAD # state changes to dead
+    self.ghosts = new_ghosts # list of ghosts new position becomes new ghosts list
+
+  # fuction to move player
+
+  def move_player(self, direction):
+    """
+    Stores where Pac Man currently is and then attempts to move Pac
+    Man, ensuring he doesn't move into a wall. If a pac dot is
+    consumed, increase the players points and remove the dot from
+    the set of uneaten dots. Adjust the game state if there are no
+    more dots to be eaten or if Pac Man walks into a ghost.
+    """
+    self.old_pacman = self.pacman # makes old_pacman = pacmans position
+    dr, dc = DIRS[direction] # dr, dc = DIRS numbers, eg dr = -1 and dc = 0
+    pos = (self.pacman[0] + dr, self.pacman[1] + dc) # pacmans position + dr,dc
+    if pos in self.ghosts: # if pos = ghosts position
+      self.state = DEAD # state = dead
+    elif pos not in self.walls: # if pos != "#"
+      if pos in self.dots: # if pos = "."
+        self.points += 1 # 1 added to points
+        self.dots.remove(pos) # remove the dot from that position
+        if len(self.dots) == 0: # if no more dots left
+          self.state = WON # state = won
+      self.pacman = pos # make pacman the new position
+
+  # output function
+
+  def output(self, file=sys.stdout):
+    """
+    Outputs the current game layout to the the provided output
+    file. Defaults to sys.stdout.
+    """
+    print('Points:', self.points, file=file)
+    print('')
+    for r in range(self.height): # while r in the range of height of file
+      for c in range(self.width): # while c in range of width of file
+        pos = (r, c) 
+        if pos in self.ghosts: # if pos = one of ghosts in list, ghosts
+          file.write(GHOST) # change that position to "G"
+        elif pos == self.pacman: # if pos = pacmans position
+          file.write(PACMAN) # change that position to "P"
+        elif pos in self.dots: # if pos = a dot position
+          file.write(DOT) # change that positon to a "."
+        elif pos in self.walls: # if pos = postion of a wall
+          file.write(WALL) # change that position to a "#"
+        else:
+          file.write(SPACE) # make that position to a " "
+      file.write('\n')
+
+# game loop
+def main():
+  print('Welcome to Mystery Pacman')
+  print('')
+  print('INSTRUCTIONS:')
+  print('')
+  print('Type in a string of directions for your pacman to follow next to Commands.')
+  print('')
+  print('Use following to move your pacman:')
+  print('')
+  print("U for Up")
+  print("D for Down")
+  print("L for Left")
+  print("R for Right")
+  print('')
+  print("Type commands one after another with a space in between each")
+  print("eg. D D U R L L ")
+  print('')
+  print("When done press enter and see what score you got.")
+  print('')
+  print("ENJOY!")
+  print('')
+  commands = input('Commands: ') # get users input
+  print('')
+  game = Game() # define game
+
+  # Main game loop.
+  for command in commands.split(): # while letter stil in list of command eg O in ["O", "R", "R"]
+    if not game.is_alive(): # if pacman is dead break loop
+      break
+    if command == OUTPUT: # letter in command = "O"
+      game.output() #print the maze
+    else:
+      game.move_player(command) # do move_player function above
+      game.move_ghosts() # do move_ghost funtion above
+
+  # Output the final state.
+  if game.has_won(): # if game = has_won
+    print('You won!')
+  elif game.is_dead(): # if game = is_dead
+    print('You died!')
+  game.output() # output maze
+
+
+if __name__ == '__main__':
+  main()
+
